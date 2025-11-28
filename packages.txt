@@ -1,3 +1,5 @@
 libzbar0
 libsm6
 libxrender1
+libgl1-mesa-glx
+libfontconfig1
