@@ -21,13 +21,14 @@ st.markdown("""
 /* Ensure high visibility and tappability for buttons on mobile */
 div.stButton > button {
     width: 100%;
-    padding: 1rem;
-    font-size: 1.1rem;
+    padding: 0.8rem 0.5rem; /* Slightly reduced padding for better fit */
+    font-size: 1.0rem; 
     font-weight: 700;
     margin: 5px 0;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border-radius: 8px; /* Slightly smaller radius */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: all 0.2s ease;
+    text-align: center;
 }
 
 /* Status Styling: Green for Present, Red for Absent/Remaining */
@@ -41,6 +42,16 @@ div.stButton > button {
     background-color: #F87171 !important; /* Tailwind red-400 */
     color: white !important;
     border: 2px solid #EF4444 !important;
+}
+
+/* Ensure student name on the left is bold and vertically aligned */
+.student-name {
+    font-weight: 600;
+    font-size: 1.1rem;
+    padding: 0.8rem 0; /* Align with button padding */
+    display: flex;
+    align-items: center;
+    min-height: 100%; /* Ensure full height alignment */
 }
 </style>
 """, unsafe_allow_html=True)
@@ -67,7 +78,7 @@ def get_gspread_client():
 
 # Caching with short TTL (1 second) to enable multi-user real-time refresh
 @st.cache_data(ttl=1) 
-def load_master_students(_spreadsheet): # FIXED: Added leading underscore to bypass hashing
+def load_master_students(_spreadsheet):
     """Loads the master student list from the 'Students' sheet."""
     try:
         wks = _spreadsheet.worksheet("Students")
@@ -85,7 +96,7 @@ def load_master_students(_spreadsheet): # FIXED: Added leading underscore to byp
         return pd.DataFrame()
 
 @st.cache_data(ttl=1)
-def get_current_attendance_status(_spreadsheet, current_checkpoint, master_df): # FIXED: Added leading underscore to bypass hashing
+def get_current_attendance_status(_spreadsheet, current_checkpoint, master_df):
     """
     Reads the AttendanceLog and determines the LATEST status for all students 
     for the active checkpoint. Refreshes every 1 second (ttl=1) for real-time concurrency.
@@ -123,6 +134,50 @@ def get_current_attendance_status(_spreadsheet, current_checkpoint, master_df): 
     except Exception as e:
         st.error(f"Error retrieving current attendance status from log. Ensure 'AttendanceLog' tab exists and has the correct headers: {e}")
         return pd.DataFrame({'ID': master_df['ID'].tolist(), 'Status': ['Absent'] * len(master_df)})
+
+
+@st.cache_data(ttl=1)
+def get_active_checkpoint_name(_spreadsheet):
+    """
+    Reads a reserved row in AttendanceLog (using 'CONFIG_STATE' as ID) to find
+    the current active checkpoint name for global state synchronization.
+    """
+    try:
+        wks = _spreadsheet.worksheet("AttendanceLog")
+        df_log = pd.DataFrame(wks.get_all_records())
+        
+        # Look for the row that holds the active checkpoint name (sentinel ID)
+        config_row = df_log[df_log['ID'] == 'CONFIG_STATE']
+        
+        if config_row.empty:
+            return ""
+        
+        # The Checkpoint column holds the active checkpoint name. Return the latest one.
+        # This will be "" if the app was globally reset.
+        return config_row.sort_values(by='Timestamp', ascending=False)['Checkpoint'].iloc[0]
+        
+    except Exception:
+        # If the sheet is empty or columns are wrong, return empty string
+        return ""
+
+def set_active_checkpoint_name(spreadsheet, checkpoint_name):
+    """Writes the new active checkpoint name to the sheet for global sync."""
+    try:
+        wks = spreadsheet.worksheet("AttendanceLog")
+        timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Sentinel ID 'CONFIG_STATE' used for global app state management
+        # Checkpoint column holds the active name, Status column is not used here ('N/A')
+        new_row = [timestamp, checkpoint_name, 'CONFIG_STATE', 'N/A', 'N/A']
+        wks.append_row(new_row, value_input_option='USER_ENTERED')
+        
+        # Force cache clear on all sync-related functions
+        get_active_checkpoint_name.clear()
+        get_current_attendance_status.clear()
+        return True
+    except Exception as e:
+        st.error(f"Error synchronizing checkpoint state globally: {e}")
+        return False
 
 
 def save_attendance_entry(spreadsheet, student_id, status):
@@ -200,34 +255,55 @@ def main():
         st.warning("Master student list could not be loaded or is empty. Please check the 'Students' sheet.")
         return
 
+    # --- Global State Synchronization ---
+    global_checkpoint = get_active_checkpoint_name(spreadsheet)
+    
+    # Override local state if a global checkpoint is active
+    if global_checkpoint:
+        st.session_state.is_initialized = True
+        st.session_state.current_checkpoint = global_checkpoint
+    else:
+        # If the global checkpoint is empty (reset), ensure local state is also reset
+        st.session_state.is_initialized = False
+        st.session_state.current_checkpoint = ""
+    # -----------------------------------
+
+
     # 2. Checkpoint Management Section
     col1, col2 = st.columns([5, 3])
 
     with col1:
+        # Checkpoint input field now uses the globally synchronized value
         checkpoint = st.text_input(
             "📍 Current Checkpoint Name",
+            value=st.session_state.current_checkpoint,
             key="checkpoint_input",
             placeholder="Enter Location/Activity Name (e.g., Temple Visit Check-In)",
-            disabled=st.session_state.is_initialized
+            # Disable if initialized globally OR if input field is pre-filled from global state
+            disabled=st.session_state.is_initialized 
         )
-        if st.session_state.is_initialized:
-            st.session_state.current_checkpoint = checkpoint
+        # This update ensures the current_checkpoint is always the displayed value
+        st.session_state.current_checkpoint = checkpoint
         
     with col2:
         st.write(" ") # Spacer for alignment
         if not st.session_state.is_initialized:
             if st.button("Start New Checkpoint", type="primary", use_container_width=True, disabled=not checkpoint):
-                st.session_state.is_initialized = True
-                st.session_state.current_checkpoint = checkpoint
-                get_current_attendance_status.clear()
-                st.rerun()
+                # Global Start: Write to the sheet
+                if set_active_checkpoint_name(spreadsheet, checkpoint):
+                    st.session_state.is_initialized = True
+                    st.session_state.current_checkpoint = checkpoint
+                    st.toast(f"Checkpoint '{checkpoint}' started globally!", icon='🚀')
+                    st.rerun()
         else:
-            if st.button("End Checkpoint & Reset App", use_container_width=True, help="Resets the application interface for the next event. All data is securely saved in Google Sheets."):
-                st.session_state.is_initialized = False
-                st.session_state.current_checkpoint = ""
-                st.session_state.scanned_id_buffer = None
-                get_current_attendance_status.clear()
-                st.rerun()
+            if st.button("End Checkpoint & Reset App (Global)", use_container_width=True, help="Resets the application interface for the next event on ALL connected devices."):
+                # Global Reset: Write an empty name to the sheet
+                if set_active_checkpoint_name(spreadsheet, ""):
+                    st.session_state.is_initialized = False
+                    st.session_state.current_checkpoint = ""
+                    st.session_state.scanned_id_buffer = None
+                    st.toast("Checkpoint ended and app reset globally!", icon='🛑')
+                    st.rerun()
 
     st.markdown("---")
     
@@ -249,8 +325,7 @@ def main():
         st.subheader("🤳 Continuous Scan Mode")
         st.caption("Position the camera to scan student QR codes. No button presses are required between scans.")
         
-        # Webrtc Streamer component to access the mobile camera (set to prefer environment/rear camera)
-        # FIXED: Added multiple STUN servers for more robust WebRTC connection (ICE negotiation)
+        # Webrtc Streamer component with expanded STUN list for stability
         webrtc_streamer(
             key="scanner_stream",
             video_processor_factory=BarcodeDetector,
@@ -259,7 +334,12 @@ def main():
                     {"urls": ["stun:stun.l.google.com:19302"]},
                     {"urls": ["stun:stun1.l.google.com:19302"]},
                     {"urls": ["stun:stun2.l.google.com:19302"]},
+                    {"urls": ["stun:stun3.l.google.com:19302"]},
+                    {"urls": ["stun:stun4.l.google.com:19302"]},
                     {"urls": ["stun:global.stun.twilio.com:3478"]},
+                    {"urls": ["stun:stun.nextcloud.com:443"]},
+                    {"urls": ["stun:stun.voipbuster.com"]},
+                    {"urls": ["stun:stun.schlund.de"]},
                 ]
             },
             media_stream_constraints={"video": {"facingMode": "environment"}}, 
@@ -294,39 +374,45 @@ def main():
 
         st.markdown("---")
         
-        # --- Real-Time Manual Override and Status List ---
-        st.subheader("Manual Status Check (Tap to Override)")
+        # --- Real-Time Manual Override and Status List (Updated UI) ---
+        st.subheader("Manual Status Check (Tap to Toggle Status)")
         
         # Prepare the list for display, ensuring all students are included
         display_df = master_df.merge(status_df[['ID', 'Status']], on='ID', how='left').fillna({'Status': 'Absent'})
+        
+        st.markdown("---") # Separator before the list starts
 
-        # Use a responsive grid (3 columns is ideal for mobile viewing)
-        cols = st.columns(3) 
-        col_index = 0
-
+        # Custom two-column layout for each student to clearly separate name and status button
         for index, row in display_df.iterrows():
             student_id = row['ID']
             name = row['Name']
             status = row['Status']
             css_class = 'present' if status == 'Present' else 'absent'
             
-            with cols[col_index]:
-                # Button displays name and serves as the manual override control
+            # Use a two-column row for Name (2 parts wide) and Status Button (1 part wide)
+            col_name, col_status = st.columns([2, 1])
+            
+            with col_name:
+                # Student name on the left
+                st.markdown(f'<div class="student-name">{name}</div>', unsafe_allow_html=True)
+                
+            with col_status:
+                # Status button on the right (shows current status and acts as toggle)
                 new_status = 'Absent' if status == 'Present' else 'Present'
                 
                 if st.button(
-                    f"{name}", 
-                    key=f"manual_btn_{student_id}_{status}", 
+                    status, # Display the current status on the button
+                    key=f"manual_btn_{student_id}", 
                     use_container_width=True
                 ):
                     # Manual override: Log the new status
                     save_attendance_entry(spreadsheet, student_id, new_status)
                     st.toast(f"Manual Override: {name} marked as {new_status}!", icon='🔄')
-
+                
                 # Inject style based on the real-time status
                 st.markdown(f"""
                     <script>
-                        var button = document.querySelector('[data-testid="stButton"] button[key="manual_btn_{student_id}_{status}"]');
+                        var button = document.querySelector('[data-testid="stButton"] button[key="manual_btn_{student_id}"]');
                         if (button) {{
                             button.classList.remove('present', 'absent');
                             button.classList.add('{css_class}');
@@ -334,7 +420,8 @@ def main():
                     </script>
                 """, unsafe_allow_html=True)
                 
-            col_index = (col_index + 1) % len(cols)
+            st.markdown("---") # Separator between student entries
+
     else:
         st.info("👆 Please enter a Checkpoint Name and click 'Start New Checkpoint' to activate the real-time tracking interface.")
 
