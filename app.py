@@ -6,6 +6,7 @@ from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 from pyzbar.pyzbar import decode
 from PIL import Image
 import numpy as np
+import io
 
 # --- Configuration and Page Setup ---
 st.set_page_config(
@@ -233,6 +234,45 @@ class BarcodeDetector(VideoTransformerBase):
         
         return img
 
+def process_uploaded_image(uploaded_file, spreadsheet, master_df, status_df):
+    """Processes an uploaded image to find and log a QR code."""
+    if uploaded_file is None:
+        return
+        
+    try:
+        # Read file as bytes and open with PIL
+        image = Image.open(io.BytesIO(uploaded_file.read()))
+        
+        # Decode the image for barcodes/QR codes
+        decoded_objects = decode(image)
+
+        if decoded_objects:
+            student_id = decoded_objects[0].data.decode('utf-8').strip()
+            
+            if student_id in master_df['ID'].values:
+                # Check the current status before writing
+                current_status_row = status_df[status_df['ID'] == student_id]
+                current_status = current_status_row['Status'].iloc[0] if not current_status_row.empty else 'Absent'
+                
+                if current_status != 'Present':
+                    success, name = save_attendance_entry(spreadsheet, student_id, 'Present')
+                    if success:
+                        st.success(f"✅ IMAGE SCANNED: {name} successfully checked in!")
+                else:
+                    name = st.session_state.id_to_name.get(student_id, "Student")
+                    st.warning(f"⚠️ Already Checked In: {name}", icon='⚠️')
+            else:
+                st.error(f"❌ Invalid ID Scanned from Image: {student_id}. ID not found in master list.", icon='❌')
+        else:
+            st.error("🔍 No QR or barcode found in the uploaded image. Try taking a closer, clearer picture.")
+            
+        # Re-run to refresh status list and clear the file uploader
+        st.session_state.uploaded_file = None
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"An error occurred while processing the image: {e}")
+
 
 # --- Main Application Logic ---
 
@@ -246,9 +286,11 @@ def main():
         st.session_state.scanned_id_buffer = None
         st.session_state.current_checkpoint = ""
         st.session_state.id_to_name = {}
-        # Ensure manual input is tracked
         if 'manual_id_input' not in st.session_state:
             st.session_state.manual_id_input = ""
+        # Initialize for image upload
+        if 'uploaded_file' not in st.session_state:
+            st.session_state.uploaded_file = None
 
 
     spreadsheet = get_gspread_client()
@@ -327,7 +369,7 @@ def main():
         
         # --- Scanner View ---
         st.subheader("🤳 Continuous Scan Mode (May be unstable)")
-        st.caption("If the scanner is not working, use the Manual ID Entry below.")
+        st.caption("This uses WebRTC and may fail on some networks/devices. If it fails, please use the manual entry or image upload below.")
         
         is_processing_scan = st.session_state.get('scanned_id_buffer') is not None
         
@@ -384,7 +426,21 @@ def main():
 
         st.markdown("---")
         
-        # --- Manual ID Entry (Alternative to Scanner) ---
+        # --- Image Upload Scan (Reliable Alternative 2) ---
+        st.subheader("🖼️ Image Upload Scan (Alternative)")
+        uploaded_file = st.file_uploader(
+            "Take a picture of the QR code and upload the image file here:", 
+            type=['png', 'jpg', 'jpeg'],
+            key="uploaded_file"
+        )
+        
+        if uploaded_file is not None:
+            # Pass the file object to the processor function
+            process_uploaded_image(uploaded_file, spreadsheet, master_df, status_df)
+            
+        st.markdown("---")
+
+        # --- Manual ID Entry (Reliable Alternative 1) ---
         st.subheader("⌨️ Manual ID/Code Entry (Reliable Fallback)")
         
         manual_id = st.text_input("Enter Student ID/Code", key="manual_id_input", placeholder="ID number or text from the QR code")
@@ -464,7 +520,11 @@ def main():
             st.markdown("---") # Separator between student entries
 
     else:
-        st.info("👆 Please enter a Checkpoint Name and click 'Start New Checkpoint' to activate the real-time tracking interface.")
+        # Inform users when the checkpoint is globally reset
+        if global_checkpoint == "" and st.session_state.is_initialized:
+            st.warning("🛑 The checkpoint has been ended by the primary teacher. Please wait for a new checkpoint to be started.")
+        else:
+            st.info("👆 Please enter a Checkpoint Name and click 'Start New Checkpoint' to activate the real-time tracking interface.")
 
 
 if __name__ == "__main__":
