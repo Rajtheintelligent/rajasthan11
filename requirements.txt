@@ -1,0 +1,7 @@
+streamlit
+pandas
+gspread
+streamlit-webrtc
+Pillow
+pyzbar
+opencv-python
