@@ -246,6 +246,10 @@ def main():
         st.session_state.scanned_id_buffer = None
         st.session_state.current_checkpoint = ""
         st.session_state.id_to_name = {}
+        # Ensure manual input is tracked
+        if 'manual_id_input' not in st.session_state:
+            st.session_state.manual_id_input = ""
+
 
     spreadsheet = get_gspread_client()
     if spreadsheet is None: return 
@@ -322,8 +326,8 @@ def main():
         
         
         # --- Scanner View ---
-        st.subheader("🤳 Continuous Scan Mode")
-        st.caption("Position the camera to scan student QR codes. No button presses are required between scans.")
+        st.subheader("🤳 Continuous Scan Mode (May be unstable)")
+        st.caption("If the scanner is not working, use the Manual ID Entry below.")
         
         is_processing_scan = st.session_state.get('scanned_id_buffer') is not None
         
@@ -368,20 +372,50 @@ def main():
                     success, name = save_attendance_entry(spreadsheet, scanned_id, 'Present')
                     if success:
                         st.toast(f"✅ CHECKED IN: {name}", icon='✅')
-                    # If not successful, an error is already displayed in save_attendance_entry
                 else:
                     name = st.session_state.id_to_name.get(scanned_id, "Student")
-                    st.warning(f"⚠️ Already Checked In: {name}. Status saved by another device or previously.", icon='⚠️')
+                    st.warning(f"⚠️ Already Checked In: {name}", icon='⚠️')
             else:
                 st.error(f"❌ Invalid ID Scanned: {scanned_id}. ID not found in master list.", icon='❌')
                 
-            # CRITICAL: Clear the buffer to immediately allow the next scan from the camera feed
+            # CRITICAL: Clear the buffer to immediately allow the next scan/reenable camera
             st.session_state.scanned_id_buffer = None
-            st.rerun() # Rerun to update the counter, list view, and re-enable the camera component
+            st.rerun() 
 
         st.markdown("---")
         
-        # --- Real-Time Manual Override and Status List (Updated UI) ---
+        # --- Manual ID Entry (Alternative to Scanner) ---
+        st.subheader("⌨️ Manual ID/Code Entry (Reliable Fallback)")
+        
+        manual_id = st.text_input("Enter Student ID/Code", key="manual_id_input", placeholder="ID number or text from the QR code")
+        
+        if st.button("Check In Manually", disabled=not manual_id, type="secondary", use_container_width=True):
+            student_id = st.session_state.manual_id_input.strip()
+            
+            if student_id in master_df['ID'].values:
+                
+                # Check the current status before writing
+                current_status_row = status_df[status_df['ID'] == student_id]
+                current_status = current_status_row['Status'].iloc[0] if not current_status_row.empty else 'Absent'
+                
+                if current_status != 'Present':
+                    # Log the Present status instantly
+                    success, name = save_attendance_entry(spreadsheet, student_id, 'Present')
+                    if success:
+                        st.toast(f"✅ MANUAL CHECKED IN: {name}", icon='✅')
+                else:
+                    name = st.session_state.id_to_name.get(student_id, "Student")
+                    st.warning(f"⚠️ Already Checked In: {name}", icon='⚠️')
+            else:
+                st.error(f"❌ Invalid ID Entered: {student_id}. ID not found in master list.", icon='❌')
+
+            # Clear input and rerun to refresh the list and clear the input box
+            st.session_state.manual_id_input = ""
+            st.rerun() 
+
+        st.markdown("---")
+        
+        # --- Real-Time Manual Override and Status List ---
         st.subheader("Manual Status Check (Tap to Toggle Status)")
         
         # Prepare the list for display, ensuring all students are included
