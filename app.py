@@ -325,27 +325,34 @@ def main():
         st.subheader("🤳 Continuous Scan Mode")
         st.caption("Position the camera to scan student QR codes. No button presses are required between scans.")
         
-        # Webrtc Streamer component with expanded STUN list for stability
-        webrtc_streamer(
-            key="scanner_stream",
-            video_processor_factory=BarcodeDetector,
-            rtc_configuration={
-                "iceServers": [
-                    {"urls": ["stun:stun.l.google.com:19302"]},
-                    {"urls": ["stun:stun1.l.google.com:19302"]},
-                    {"urls": ["stun:stun2.l.google.com:19302"]},
-                    {"urls": ["stun:stun3.l.google.com:19302"]},
-                    {"urls": ["stun:stun4.l.google.com:19302"]},
-                    {"urls": ["stun:global.stun.twilio.com:3478"]},
-                    {"urls": ["stun:stun.nextcloud.com:443"]},
-                    {"urls": ["stun:stun.voipbuster.com"]},
-                    {"urls": ["stun:stun.schlund.de"]},
-                ]
-            },
-            media_stream_constraints={"video": {"facingMode": "environment"}}, 
-            sendback_video=False 
-        )
+        is_processing_scan = st.session_state.get('scanned_id_buffer') is not None
         
+        if not is_processing_scan:
+            # Webrtc Streamer component with expanded STUN list for stability
+            webrtc_streamer(
+                key="scanner_stream",
+                video_processor_factory=BarcodeDetector,
+                rtc_configuration={
+                    "iceServers": [
+                        {"urls": ["stun:stun.l.google.com:19302"]},
+                        {"urls": ["stun:stun1.l.google.com:19302"]},
+                        {"urls": ["stun:stun2.l.google.com:19302"]},
+                        {"urls": ["stun:stun3.l.google.com:19302"]},
+                        {"urls": ["stun:stun4.l.google.com:19302"]},
+                        {"urls": ["stun:global.stun.twilio.com:3478"]},
+                        {"urls": ["stun:stun.nextcloud.com:443"]},
+                        {"urls": ["stun:stun.voipbuster.com"]},
+                        {"urls": ["stun:stun.schlund.de"]},
+                    ]
+                },
+                media_stream_constraints={"video": {"facingMode": "environment"}}, 
+                sendback_video=False 
+            )
+        else:
+            # Show a message while processing the scan
+            st.info("Processing scan... Please wait.")
+
+
         # --- Continuous Scan Processing ---
         scanned_id = st.session_state.get('scanned_id_buffer')
         
@@ -370,7 +377,7 @@ def main():
                 
             # CRITICAL: Clear the buffer to immediately allow the next scan from the camera feed
             st.session_state.scanned_id_buffer = None
-            st.rerun() # Rerun to update the counter and list view
+            st.rerun() # Rerun to update the counter, list view, and re-enable the camera component
 
         st.markdown("---")
         
