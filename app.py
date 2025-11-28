@@ -85,7 +85,7 @@ def load_master_students(_spreadsheet): # FIXED: Added leading underscore to byp
         return pd.DataFrame()
 
 @st.cache_data(ttl=1)
-def get_current_attendance_status(spreadsheet, current_checkpoint, master_df):
+def get_current_attendance_status(_spreadsheet, current_checkpoint, master_df): # FIXED: Added leading underscore to bypass hashing
     """
     Reads the AttendanceLog and determines the LATEST status for all students 
     for the active checkpoint. Refreshes every 1 second (ttl=1) for real-time concurrency.
@@ -94,7 +94,7 @@ def get_current_attendance_status(spreadsheet, current_checkpoint, master_df):
         return pd.DataFrame({'ID': master_df['ID'].tolist(), 'Status': ['Absent'] * len(master_df)})
 
     try:
-        wks = spreadsheet.worksheet("AttendanceLog")
+        wks = _spreadsheet.worksheet("AttendanceLog")
         df_log = pd.DataFrame(wks.get_all_records()) 
         
         # Initialize status for all students as Absent
