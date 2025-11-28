@@ -3,158 +3,221 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reliable QR Code Scanner</title>
-    <!-- Load Tailwind CSS for simple, mobile-friendly styling -->
+    <title>Mobile QR Scanner</title>
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load html5-qrcode library -->
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- Use Inter font family -->
     <style>
-        /* Custom styles for scanner container */
-        #reader {
-            width: 100%;
-            max-width: 400px;
-            margin: 0 auto;
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
         }
-        .result-box {
-            background-color: #ecfdf5; /* green-50 */
-            border-left: 4px solid #10b981; /* emerald-500 */
+        /* Style for the video feed container */
+        #scanner-container {
+            position: relative;
+            width: 100%;
+            max-width: 450px; /* Max width suitable for mobile portrait mode */
+            margin: 0 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #video, #scan-canvas {
+            width: 100%;
+            display: block;
+        }
+        /* The canvas element is used to process video frames, keep it hidden */
+        #scan-canvas {
+            display: none; 
+        }
+        /* Custom border/guide for scanning area */
+        #video-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 70%;
+            height: 70%;
+            transform: translate(-50%, -50%);
+            border: 4px dashed #3B82F6; /* Blue dash for visibility */
+            border-radius: 8px;
+            z-index: 10;
+            pointer-events: none; /* Allows clicks to pass through to the video */
         }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen p-4 flex flex-col items-center">
+<body class="p-4 flex flex-col items-center justify-start min-h-screen">
 
-    <div class="w-full max-w-lg bg-white p-6 rounded-xl shadow-2xl space-y-6">
-        <h1 class="text-3xl font-extrabold text-gray-900 text-center">
-            Reliable QR Scanner
-        </h1>
-        <p class="text-center text-gray-500">
-            Scan the Student QR code below, then copy the ID to your Streamlit app.
-        </p>
-        
-        <!-- Scanner container -->
-        <div id="reader" class="rounded-lg overflow-hidden border-2 border-gray-200"></div>
-
-        <!-- Result Display -->
-        <div id="result-container" class="hidden">
-            <div class="result-box p-4 rounded-lg">
-                <p class="font-medium text-lg text-emerald-700">Scan Successful!</p>
-                <p class="mt-1 text-gray-800">Student ID:</p>
-                <div id="result" class="mt-1 p-3 bg-white border border-gray-300 rounded-lg text-2xl font-mono text-center select-all cursor-text shadow-inner"></div>
-                <button id="copy-button" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-150">
-                    Copy ID
-                </button>
-                <button id="restart-button" class="mt-2 w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition duration-150">
-                    Scan New Code
-                </button>
-            </div>
-        </div>
-
-        <div id="error-message" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg">
-            <p class="font-bold">Error</p>
-            <p id="error-text">Failed to start the camera or decode the QR code. Ensure you granted permissions.</p>
-        </div>
+    <div class="w-full max-w-lg mb-6">
+        <h1 class="text-2xl font-bold text-gray-800 text-center mb-1">Trip ID Scanner</h1>
+        <p class="text-sm text-gray-500 text-center">Scan QR code, copy ID, and paste into the Streamlit App.</p>
     </div>
 
+    <!-- Scanner Container -->
+    <div id="scanner-container">
+        <!-- Video element to display camera feed -->
+        <video id="video" playsinline muted autoplay></video>
+        <!-- Scanning Guide Overlay -->
+        <div id="video-overlay"></div>
+        <!-- Canvas for image processing (hidden) -->
+        <canvas id="scan-canvas"></canvas>
+    </div>
+
+    <!-- Status & Output Area -->
+    <div class="w-full max-w-lg mt-6 p-4 bg-white rounded-xl shadow-lg">
+        
+        <div id="status-message" class="text-center text-sm font-medium text-blue-600 mb-4 p-2 bg-blue-50 rounded-lg">
+            Awaiting camera access...
+        </div>
+        
+        <div class="text-center mb-4">
+            <label class="block text-gray-700 font-semibold mb-1">Scanned Student ID:</label>
+            <input 
+                id="scanned-id" 
+                readonly 
+                placeholder="Scan a QR code..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg font-mono text-center bg-gray-50 focus:outline-none focus:border-blue-500"
+            />
+        </div>
+
+        <button 
+            id="copy-button" 
+            onclick="copyToClipboard()"
+            disabled
+            class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+        >
+            📋 Copy ID to Clipboard
+        </button>
+        
+        <button 
+            id="error-button" 
+            onclick="location.reload()"
+            class="hidden w-full mt-2 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition duration-150 ease-in-out shadow-md hover:shadow-lg"
+        >
+            ❌ Error: Try Restarting Scanner
+        </button>
+    </div>
+
+
+    <!-- Load the jsQR library -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
     <script>
-        const qrCodeRegionId = "reader";
-        const resultDiv = document.getElementById('result');
-        const resultContainer = document.getElementById('result-container');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('scan-canvas');
+        const context = canvas.getContext('2d');
+        const scannedIdInput = document.getElementById('scanned-id');
+        const statusMessage = document.getElementById('status-message');
         const copyButton = document.getElementById('copy-button');
-        const restartButton = document.getElementById('restart-button');
-        const errorContainer = document.getElementById('error-message');
-        const errorText = document.getElementById('error-text');
-        
-        let html5QrcodeScanner = null;
+        const errorButton = document.getElementById('error-button');
+        let stream;
 
-        // Function to start the scanner
-        function startScanner() {
-            document.getElementById(qrCodeRegionId).classList.remove('hidden');
-            resultContainer.classList.add('hidden');
-            errorContainer.classList.add('hidden');
-            
-            if (html5QrcodeScanner) {
-                // If it exists, attempt to stop it first to ensure a clean start
-                html5QrcodeScanner.stop().catch(err => console.log("Stop failed, starting anyway.", err));
+        // --- Helper Function for Copying ---
+        function copyToClipboard() {
+            const id = scannedIdInput.value;
+            if (!id || id === scannedIdInput.placeholder) {
+                updateStatus('Nothing to copy.', 'orange');
+                return;
             }
-
-            html5QrcodeScanner = new Html5QrcodeScanner(
-                qrCodeRegionId,
-                { 
-                    fps: 10, 
-                    qrbox: {width: 250, height: 250},
-                    videoConstraints: {
-                        facingMode: "environment"
-                    }
-                },
-                /* verbose= */ false
-            );
             
-            html5QrcodeScanner.render(onScanSuccess, onScanError)
-                .catch(onCameraStartError);
-        }
-
-        // Function called when a QR code is successfully scanned
-        function onScanSuccess(decodedText, decodedResult) {
-            // Stop scanning permanently until user clicks "Scan New Code"
-            html5QrcodeScanner.pause(true); 
-
-            // Display the result
-            resultDiv.textContent = decodedText;
-            resultContainer.classList.remove('hidden');
-            document.getElementById(qrCodeRegionId).classList.add('hidden'); // Hide scanner view
-            copyButton.textContent = "Copy ID"; // Reset copy button text
-            
-            // Auto-copy the ID to the clipboard
-            navigator.clipboard.writeText(decodedText).then(() => {
-                copyButton.textContent = "ID Copied!";
-                setTimeout(() => copyButton.textContent = "Copy ID", 2000);
-            }).catch(err => {
-                console.error('Failed to copy text (will rely on manual copy): ', err);
-                copyButton.textContent = "Copy ID (Click Here)";
-            });
-        }
-
-        // Function called if stream cannot be started (critical failure)
-        function onCameraStartError(error) {
-             console.error("Camera Start Error: ", error);
-             errorText.textContent = "Camera access denied or device not supported. Ensure you granted permissions.";
-             errorContainer.classList.remove('hidden');
-             document.getElementById(qrCodeRegionId).classList.add('hidden');
-        }
-
-        // Initialize and start the scanner on load
-        document.addEventListener('DOMContentLoaded', startScanner);
-
-        // Manual copy button handler
-        copyButton.addEventListener('click', () => {
-            const idToCopy = resultDiv.textContent;
-            // Use fallback for clipboard API if needed
-            if (!navigator.clipboard || !navigator.clipboard.writeText) {
-                const el = document.createElement('textarea');
-                el.value = idToCopy;
-                document.body.appendChild(el);
-                el.select();
+            // Use execCommand('copy') as navigator.clipboard may not work in iframes/certain environments
+            try {
+                scannedIdInput.select();
+                scannedIdInput.setSelectionRange(0, 99999); // For mobile devices
                 document.execCommand('copy');
-                document.body.removeChild(el);
-            } else {
-                 navigator.clipboard.writeText(idToCopy);
-            }
+                
+                updateStatus(`✅ ID Copied: ${id}`, 'green');
+                // Briefly switch the button to confirm copy
+                copyButton.textContent = 'ID Copied!';
+                copyButton.classList.add('bg-green-600');
+                setTimeout(() => {
+                    copyButton.textContent = '📋 Copy ID to Clipboard';
+                    copyButton.classList.remove('bg-green-600');
+                }, 1500);
 
-            copyButton.textContent = "ID Copied!";
-            setTimeout(() => {
-                copyButton.textContent = "Copy ID";
-            }, 2000);
-        });
+            } catch (err) {
+                updateStatus('❌ Failed to copy (Manual copy required).', 'red');
+            }
+        }
+
+        // --- Status Update Function ---
+        function updateStatus(message, color) {
+            statusMessage.textContent = message;
+            statusMessage.className = `text-center text-sm font-medium mb-4 p-2 rounded-lg`;
+            if (color === 'blue') {
+                statusMessage.classList.add('text-blue-600', 'bg-blue-50');
+            } else if (color === 'green') {
+                statusMessage.classList.add('text-green-600', 'bg-green-50');
+            } else if (color === 'red') {
+                statusMessage.classList.add('text-red-600', 'bg-red-50');
+            } else if (color === 'orange') {
+                 statusMessage.classList.add('text-orange-600', 'bg-orange-50');
+            }
+        }
+
+        // --- Main Scanning Loop ---
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // Resize canvas to match video dimensions
+                canvas.height = video.videoHeight;
+                canvas.width = video.videoWidth;
+
+                // Draw the video frame onto the canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                
+                // Use jsQR to scan for QR codes
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+
+                if (code) {
+                    // QR Code Found
+                    scannedIdInput.value = code.data.trim();
+                    copyButton.disabled = false;
+                    updateStatus('🎉 Code Found! Tap "Copy ID" and paste into the Streamlit app.', 'green');
+                } else {
+                    // No QR Code Found
+                    updateStatus('🔍 Scanning... Align QR code within the blue guide.', 'blue');
+                }
+            }
+            // Request the next frame recursively
+            requestAnimationFrame(tick);
+        }
+
+        // --- Initialization and Camera Setup ---
+        async function startCamera() {
+            updateStatus('Requesting camera permissions...', 'blue');
+            try {
+                // Request back camera on mobile devices
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: "environment" 
+                    } 
+                });
+                
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    updateStatus('Camera active. Scanning for QR codes...', 'blue');
+                    requestAnimationFrame(tick);
+                };
+                
+            } catch (err) {
+                // Handle permission denied or no camera found errors
+                console.error("Camera access error:", err);
+                updateStatus('❌ Error: Camera access denied or not available.', 'red');
+                errorButton.classList.remove('hidden');
+            }
+        }
+
+        // --- Lifecycle Hooks ---
+        window.addEventListener('load', startCamera);
         
-        // Restart button handler
-        restartButton.addEventListener('click', () => {
-            // This stops and cleans up the previous instance, then calls startScanner
-             html5QrcodeScanner.stop().then(() => {
-                startScanner();
-            }).catch(err => {
-                // If stop fails (e.g., already stopped or failed to start), just try starting clean
-                startScanner();
-            });
+        // Stop camera stream when the page is closed/unloaded
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
         });
 
     </script>
