@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 import time
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+# Removed: from streamlit_webrtc import webrtc_streamer, VideoTransformerBase 
 from pyzbar.pyzbar import decode
 from PIL import Image
 import numpy as np
@@ -54,6 +54,16 @@ div.stButton > button {
     align-items: center;
     min-height: 100%; /* Ensure full height alignment */
 }
+
+/* Style for the new external scanner link box */
+.scanner-link-box {
+    text-align:center; 
+    padding: 15px; 
+    border: 2px solid #2563EB; 
+    border-radius: 8px; 
+    background-color: #EFF6FF;
+    margin-bottom: 20px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,6 +86,25 @@ def get_gspread_client():
     except Exception as e:
         st.error(f"Error connecting to Google Sheets. Verify permissions and secrets: {e}")
         return None
+
+# REQUIRED HELPER FUNCTION: Logs an attendance entry to the Google Sheet
+def save_attendance_entry(spreadsheet, student_id, status):
+    """Logs the attendance status for a student to the AttendanceLog sheet."""
+    try:
+        wks = spreadsheet.worksheet("AttendanceLog")
+        timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        name = st.session_state.id_to_name.get(student_id, "Unknown Student")
+        
+        new_row = [timestamp, st.session_state.current_checkpoint, student_id, status, name]
+        wks.append_row(new_row, value_input_option='USER_ENTERED')
+        
+        # Force cache clear on status functions for real-time update
+        get_current_attendance_status.clear()
+        return True, name
+    except Exception as e:
+        st.error(f"Error logging attendance for ID {student_id}: {e}")
+        return False, None
+
 
 # Caching with short TTL (1 second) to enable multi-user real-time refresh
 @st.cache_data(ttl=1) 
@@ -181,58 +210,8 @@ def set_active_checkpoint_name(spreadsheet, checkpoint_name):
         return False
 
 
-def save_attendance_entry(spreadsheet, student_id, status):
-    """Appends a single, real-time attendance entry to the 'AttendanceLog' sheet."""
-    try:
-        wks = spreadsheet.worksheet("AttendanceLog")
-        timestamp = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
-        name = st.session_state.id_to_name.get(student_id, "Unknown Student")
-        checkpoint = st.session_state.current_checkpoint
-        
-        # Row data must match the five column headers in AttendanceLog
-        new_row = [timestamp, checkpoint, student_id, name, status]
-        wks.append_row(new_row, value_input_option='USER_ENTERED')
-        
-        # Clear the cache for the status checker to force an immediate refresh on all devices
-        get_current_attendance_status.clear()
-        
-        return True, name
-    except Exception as e:
-        st.error(f"Error saving real-time entry to Google Sheets: {e}")
-        return False, "Unknown Student"
+# --- Removed: QR Code Video Transformer (BarcodeDetector class is removed) ---
 
-
-# --- QR Code Video Transformer (Handles Continuous Scanning) ---
-
-class BarcodeDetector(VideoTransformerBase):
-    """A VideoTransformer that detects barcodes/QR codes in the video stream."""
-    def transform(self, frame):
-        # Import cv2 dynamically for thread safety
-        try:
-            import cv2 
-        except ImportError:
-            # Fallback if cv2 is not available (though it's a requirement)
-            return frame.to_ndarray(format="bgr24")
-
-        img = frame.to_ndarray(format="bgr24")
-        pil_img = Image.fromarray(img)
-        decoded_objects = decode(pil_img)
-
-        if decoded_objects:
-            barcode = decoded_objects[0]
-            student_id = barcode.data.decode('utf-8').strip()
-
-            # Pass the scanned ID back to the Streamlit main thread using session state buffer
-            st.session_state.scanned_id_buffer = student_id
-            
-            # Draw visual feedback (Green box around the detected code)
-            points = barcode.polygon
-            if points:
-                rect = barcode.rect
-                cv2.rectangle(img, (rect.left, rect.top), (rect.left + rect.width, rect.top + rect.height), (0, 255, 0), 2)
-                cv2.putText(img, student_id, (rect.left, rect.top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        
-        return img
 
 def process_uploaded_image(uploaded_file, spreadsheet, master_df, status_df):
     """Processes an uploaded image to find and log a QR code."""
@@ -283,7 +262,7 @@ def main():
     # 1. Initialize State and Check Connection
     if 'is_initialized' not in st.session_state:
         st.session_state.is_initialized = False
-        st.session_state.scanned_id_buffer = None
+        # st.session_state.scanned_id_buffer = None # Removed as continuous scan is gone
         st.session_state.current_checkpoint = ""
         st.session_state.id_to_name = {}
         if 'manual_id_input' not in st.session_state:
@@ -321,7 +300,7 @@ def main():
     with col1:
         # Checkpoint input field now uses the globally synchronized value
         checkpoint = st.text_input(
-            "📍 Current Checkpoint Name",
+            "📍 Current Checkpoint Name (Start Location)",
             value=st.session_state.current_checkpoint,
             key="checkpoint_input",
             placeholder="Enter Location/Activity Name (e.g., Temple Visit Check-In)",
@@ -347,7 +326,7 @@ def main():
                 if set_active_checkpoint_name(spreadsheet, ""):
                     st.session_state.is_initialized = False
                     st.session_state.current_checkpoint = ""
-                    st.session_state.scanned_id_buffer = None
+                    # st.session_state.scanned_id_buffer = None # Removed
                     st.toast("Checkpoint ended and app reset globally!", icon='🛑')
                     st.rerun()
 
@@ -367,67 +346,33 @@ def main():
         st.markdown("---")
         
         
-        # --- Scanner View ---
-        st.subheader("🤳 Continuous Scan Mode (May be unstable)")
-        st.caption("This uses WebRTC and may fail on some networks/devices. If it fails, please use the manual entry or image upload below.")
+        # --- NEW: Reliable External Scanner Link ---
         
-        is_processing_scan = st.session_state.get('scanned_id_buffer') is not None
+        # *** IMPORTANT: Using the provided Vercel domain and the deployed HTML file name ***
+        Vercel_Scanner_URL = "https://rajasthan11.vercel.app/qr_scanner.html" 
+        # ***********************************************************************************
         
-        if not is_processing_scan:
-            # Webrtc Streamer component with expanded STUN list for stability
-            webrtc_streamer(
-                key="scanner_stream",
-                video_processor_factory=BarcodeDetector,
-                rtc_configuration={
-                    "iceServers": [
-                        {"urls": ["stun:stun.l.google.com:19302"]},
-                        {"urls": ["stun:stun1.l.google.com:19302"]},
-                        {"urls": ["stun:stun2.l.google.com:19302"]},
-                        {"urls": ["stun:stun3.l.google.com:19302"]},
-                        {"urls": ["stun:stun4.l.google.com:19302"]},
-                        {"urls": ["stun:global.stun.twilio.com:3478"]},
-                        {"urls": ["stun:stun.nextcloud.com:443"]},
-                        {"urls": ["stun:stun.voipbuster.com"]},
-                        {"urls": ["stun:stun.schlund.de"]},
-                    ]
-                },
-                media_stream_constraints={"video": {"facingMode": "environment"}}, 
-                sendback_video=False 
-            )
-        else:
-            # Show a message while processing the scan
-            st.info("Processing scan... Please wait.")
+        st.subheader("1️⃣ Reliable QR Scanner (Mobile Link)")
+        st.info("💡 **Staff MUST use this link on their mobile phone for stable, fast scanning.**")
 
-
-        # --- Continuous Scan Processing ---
-        scanned_id = st.session_state.get('scanned_id_buffer')
-        
-        if scanned_id:
-            if scanned_id in master_df['ID'].values:
-                
-                # Check the current status before writing
-                current_status_row = status_df[status_df['ID'] == scanned_id]
-                current_status = current_status_row['Status'].iloc[0] if not current_status_row.empty else 'Absent'
-                
-                if current_status != 'Present':
-                    # Log the Present status instantly
-                    success, name = save_attendance_entry(spreadsheet, scanned_id, 'Present')
-                    if success:
-                        st.toast(f"✅ CHECKED IN: {name}", icon='✅')
-                else:
-                    name = st.session_state.id_to_name.get(scanned_id, "Student")
-                    st.warning(f"⚠️ Already Checked In: {name}", icon='⚠️')
-            else:
-                st.error(f"❌ Invalid ID Scanned: {scanned_id}. ID not found in master list.", icon='❌')
-                
-            # CRITICAL: Clear the buffer to immediately allow the next scan/reenable camera
-            st.session_state.scanned_id_buffer = None
-            st.rerun() 
+        # Use st.markdown with a custom HTML button for better appearance and behavior (opens in new tab)
+        st.markdown(f"""
+            <div class="scanner-link-box">
+                <p style="font-size: 1.1rem; font-weight: 600;">Tap button below to launch scanner on phone:</p>
+                <a href="{Vercel_Scanner_URL}" target="_blank" 
+                   style="display: inline-block; padding: 12px 25px; background-color: #2563EB; color: white; border-radius: 8px; text-decoration: none; font-weight: 700; margin-top: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    🚀 Launch Vercel Scanner
+                </a>
+                <p style="margin-top: 10px; font-size: 0.9rem; color: #4B5563;">
+                    (After scanning on your phone, copy the ID.)
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
 
         st.markdown("---")
         
-        # --- Image Upload Scan (Reliable Alternative 2) ---
-        st.subheader("🖼️ Image Upload Scan (Alternative)")
+        # --- Image Upload Scan (Alternative 2) ---
+        st.subheader("🖼️ Alternative: Image Upload Scan")
         uploaded_file = st.file_uploader(
             "Take a picture of the QR code and upload the image file here:", 
             type=['png', 'jpg', 'jpeg'],
@@ -440,8 +385,9 @@ def main():
             
         st.markdown("---")
 
-        # --- Manual ID Entry (Reliable Alternative 1) ---
-        st.subheader("⌨️ Manual ID/Code Entry (Reliable Fallback)")
+        # --- Manual ID Entry (Reliable Log-In Point) ---
+        st.subheader("2️⃣ Paste or Type ID Here")
+        st.caption("This is where you paste the ID copied from the mobile scanner above.")
         
         manual_id = st.text_input("Enter Student ID/Code", key="manual_id_input", placeholder="ID number or text from the QR code")
         
@@ -472,7 +418,8 @@ def main():
         st.markdown("---")
         
         # --- Real-Time Manual Override and Status List ---
-        st.subheader("Manual Status Check (Tap to Toggle Status)")
+        st.subheader("3️⃣ Manual Status Check (Tap Status to Toggle)")
+        st.caption("Clicking the 'Present' or 'Absent' status button toggles the student's current status.")
         
         # Prepare the list for display, ensuring all students are included
         display_df = master_df.merge(status_df[['ID', 'Status']], on='ID', how='left').fillna({'Status': 'Absent'})
@@ -530,7 +477,8 @@ def main():
 if __name__ == "__main__":
     # Ensure critical dependencies are available before running
     try:
-        import cv2
+        # OpenCV is only needed for the image upload decoding now, not the live stream
+        import cv2 
     except ImportError:
         st.error("🚨 Required dependency `opencv-python` is missing. Please ensure all libraries are installed.")
         st.stop()
