@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reliable QR Code Scanner</title>
+    <!-- Load Tailwind CSS for simple, mobile-friendly styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load html5-qrcode library -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        /* Custom styles for scanner container */
+        #reader {
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        .result-box {
+            background-color: #ecfdf5; /* green-50 */
+            border-left: 4px solid #10b981; /* emerald-500 */
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 flex flex-col items-center">
+
+    <div class="w-full max-w-lg bg-white p-6 rounded-xl shadow-2xl space-y-6">
+        <h1 class="text-3xl font-extrabold text-gray-900 text-center">
+            Reliable QR Scanner
+        </h1>
+        <p class="text-center text-gray-500">
+            Scan the Student QR code below, then copy the ID to your Streamlit app.
+        </p>
+        
+        <!-- Scanner container -->
+        <div id="reader" class="rounded-lg overflow-hidden border-2 border-gray-200"></div>
+
+        <!-- Result Display -->
+        <div id="result-container" class="hidden">
+            <div class="result-box p-4 rounded-lg">
+                <p class="font-medium text-lg text-emerald-700">Scan Successful!</p>
+                <p class="mt-1 text-gray-800">Student ID:</p>
+                <div id="result" class="mt-1 p-3 bg-white border border-gray-300 rounded-lg text-2xl font-mono text-center select-all cursor-text shadow-inner"></div>
+                <button id="copy-button" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-150">
+                    Copy ID
+                </button>
+                <button id="restart-button" class="mt-2 w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition duration-150">
+                    Scan New Code
+                </button>
+            </div>
+        </div>
+
+        <div id="error-message" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg">
+            <p class="font-bold">Error</p>
+            <p id="error-text">Failed to start the camera or decode the QR code. Ensure you granted permissions.</p>
+        </div>
+    </div>
+
+    <script>
+        const qrCodeRegionId = "reader";
+        const resultDiv = document.getElementById('result');
+        const resultContainer = document.getElementById('result-container');
+        const copyButton = document.getElementById('copy-button');
+        const restartButton = document.getElementById('restart-button');
+        const errorContainer = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        
+        let html5QrcodeScanner = null;
+
+        // Function to start the scanner
+        function startScanner() {
+            document.getElementById(qrCodeRegionId).classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+            
+            if (html5QrcodeScanner) {
+                // If it exists, attempt to stop it first to ensure a clean start
+                html5QrcodeScanner.stop().catch(err => console.log("Stop failed, starting anyway.", err));
+            }
+
+            html5QrcodeScanner = new Html5QrcodeScanner(
+                qrCodeRegionId,
+                { 
+                    fps: 10, 
+                    qrbox: {width: 250, height: 250},
+                    videoConstraints: {
+                        facingMode: "environment"
+                    }
+                },
+                /* verbose= */ false
+            );
+            
+            html5QrcodeScanner.render(onScanSuccess, onScanError)
+                .catch(onCameraStartError);
+        }
+
+        // Function called when a QR code is successfully scanned
+        function onScanSuccess(decodedText, decodedResult) {
+            // Stop scanning permanently until user clicks "Scan New Code"
+            html5QrcodeScanner.pause(true); 
+
+            // Display the result
+            resultDiv.textContent = decodedText;
+            resultContainer.classList.remove('hidden');
+            document.getElementById(qrCodeRegionId).classList.add('hidden'); // Hide scanner view
+            copyButton.textContent = "Copy ID"; // Reset copy button text
+            
+            // Auto-copy the ID to the clipboard
+            navigator.clipboard.writeText(decodedText).then(() => {
+                copyButton.textContent = "ID Copied!";
+                setTimeout(() => copyButton.textContent = "Copy ID", 2000);
+            }).catch(err => {
+                console.error('Failed to copy text (will rely on manual copy): ', err);
+                copyButton.textContent = "Copy ID (Click Here)";
+            });
+        }
+
+        // Function called if stream cannot be started (critical failure)
+        function onCameraStartError(error) {
+             console.error("Camera Start Error: ", error);
+             errorText.textContent = "Camera access denied or device not supported. Ensure you granted permissions.";
+             errorContainer.classList.remove('hidden');
+             document.getElementById(qrCodeRegionId).classList.add('hidden');
+        }
+
+        // Initialize and start the scanner on load
+        document.addEventListener('DOMContentLoaded', startScanner);
+
+        // Manual copy button handler
+        copyButton.addEventListener('click', () => {
+            const idToCopy = resultDiv.textContent;
+            // Use fallback for clipboard API if needed
+            if (!navigator.clipboard || !navigator.clipboard.writeText) {
+                const el = document.createElement('textarea');
+                el.value = idToCopy;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+            } else {
+                 navigator.clipboard.writeText(idToCopy);
+            }
+
+            copyButton.textContent = "ID Copied!";
+            setTimeout(() => {
+                copyButton.textContent = "Copy ID";
+            }, 2000);
+        });
+        
+        // Restart button handler
+        restartButton.addEventListener('click', () => {
+            // This stops and cleans up the previous instance, then calls startScanner
+             html5QrcodeScanner.stop().then(() => {
+                startScanner();
+            }).catch(err => {
+                // If stop fails (e.g., already stopped or failed to start), just try starting clean
+                startScanner();
+            });
+        });
+
+    </script>
+</body>
+</html>
