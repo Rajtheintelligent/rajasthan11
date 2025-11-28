@@ -250,10 +250,18 @@ def main():
         st.caption("Position the camera to scan student QR codes. No button presses are required between scans.")
         
         # Webrtc Streamer component to access the mobile camera (set to prefer environment/rear camera)
+        # FIXED: Added multiple STUN servers for more robust WebRTC connection (ICE negotiation)
         webrtc_streamer(
             key="scanner_stream",
             video_processor_factory=BarcodeDetector,
-            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+            rtc_configuration={
+                "iceServers": [
+                    {"urls": ["stun:stun.l.google.com:19302"]},
+                    {"urls": ["stun:stun1.l.google.com:19302"]},
+                    {"urls": ["stun:stun2.l.google.com:19302"]},
+                    {"urls": ["stun:global.stun.twilio.com:3478"]},
+                ]
+            },
             media_stream_constraints={"video": {"facingMode": "environment"}}, 
             sendback_video=False 
         )
