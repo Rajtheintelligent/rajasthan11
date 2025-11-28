@@ -67,10 +67,10 @@ def get_gspread_client():
 
 # Caching with short TTL (1 second) to enable multi-user real-time refresh
 @st.cache_data(ttl=1) 
-def load_master_students(spreadsheet):
+def load_master_students(_spreadsheet): # FIXED: Added leading underscore to bypass hashing
     """Loads the master student list from the 'Students' sheet."""
     try:
-        wks = spreadsheet.worksheet("Students")
+        wks = _spreadsheet.worksheet("Students")
         df = pd.DataFrame(wks.get_all_records())
         if 'ID' not in df.columns or 'Name' not in df.columns:
             st.error("Sheet 'Students' is improperly configured. It must contain 'ID' and 'Name' columns.")
