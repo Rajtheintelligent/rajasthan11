@@ -349,7 +349,7 @@ def main():
         # --- NEW: Reliable External Scanner Link ---
         
         # *** IMPORTANT: Using the provided Vercel domain and the deployed HTML file name ***
-        Vercel_Scanner_URL = "https://rajasthan11.vercel.app/qr_scanner.html" 
+        Vercel_Scanner_URL = "https://rajasthan11.vercel.app/index.html" 
         # ***********************************************************************************
         
         st.subheader("1️⃣ Reliable QR Scanner (Mobile Link)")
