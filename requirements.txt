@@ -6,3 +6,6 @@ Pillow
 pyzbar
 opencv-python
 pip install streamlit-gsheets-connection
+streamlit
+pandas
+streamlit-gsheets-connection
