@@ -129,7 +129,8 @@
             if (color === 'blue') {
                 statusMessage.classList.add('text-blue-600', 'bg-blue-50');
             } else if (color === 'green') {
-                statusMessage.classList.add('text-green-600', 'bg-green-50');
+                // Modified success style
+                statusMessage.classList.add('text-green-800', 'bg-green-200', 'font-extrabold', 'text-base');
             } else if (color === 'red') {
                 statusMessage.classList.add('text-red-600', 'bg-red-50');
             } else if (color === 'orange') {
@@ -164,10 +165,10 @@
                     body: formData.toString()
                 });
                 
-                // --- Success Logic ---
+                // --- Success Logic (Updated Text) ---
                 // Since 'no-cors' prevents reading the actual response, 
                 // we assume success if the request was sent without a network error.
-                updateStatus(`✅ ID ${studentId} Logged Successfully! Ready for next scan.`, 'green');
+                updateStatus(`✅ SUCCESS: ID ${studentId} CHECKED IN.`, 'green');
                 logStatusButton.textContent = `✅ Logged ${studentId}`;
                 logStatusButton.classList.remove('bg-orange-500');
                 logStatusButton.classList.add('bg-green-500');
