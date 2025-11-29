@@ -12,7 +12,7 @@ from datetime import datetime
 ROSTER_SHEET_NAME = "Roster"
 ATTENDANCE_LOG_SHEET_NAME = "Form Responses 1" 
 # The column names used in the sheets
-ROSTER_ID_COL = "Student ID"
+ROSTER_ID_COL = "Students"
 LOG_ID_COL = "ID"
 TIMESTAMP_COL = "Timestamp"
 STATUS_COL = "Attendance Status" # New column for the final dashboard
