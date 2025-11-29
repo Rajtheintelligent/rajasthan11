@@ -49,7 +49,7 @@
 
     <div class="w-full max-w-lg mb-6">
         <h1 class="text-2xl font-bold text-gray-800 text-center mb-1">Trip ID Scanner</h1>
-        <p class="text-sm text-gray-500 text-center">Scan QR code, copy ID, and paste into the Streamlit App.</p>
+        <p class="text-sm text-gray-500 text-center">Scan QR code to automatically check in student.</p>
     </div>
 
     <!-- Scanner Container -->
@@ -70,22 +70,21 @@
         </div>
         
         <div class="text-center mb-4">
-            <label class="block text-gray-700 font-semibold mb-1">Scanned Student ID:</label>
+            <label class="block text-gray-700 font-semibold mb-1">Last Scanned ID:</label>
             <input 
                 id="scanned-id" 
                 readonly 
                 placeholder="Scan a QR code..."
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg font-mono text-center bg-gray-50 focus:outline-none focus:border-blue-500"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg font-mono text-center bg-gray-50 focus:outline-none"
             />
         </div>
 
         <button 
-            id="copy-button" 
-            onclick="copyToClipboard()"
+            id="log-status" 
             disabled
-            class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+            class="w-full bg-indigo-500 text-white font-bold py-3 px-4 rounded-lg transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
         >
-            📋 Copy ID to Clipboard
+            Awaiting Scan
         </button>
         
         <button 
@@ -102,43 +101,22 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
     <script>
+        // *** CRITICAL STEP: REPLACE THIS PLACEHOLDER URL ***
+        // Get the Google Form submission URL (the 'action' attribute from the embedded form HTML)
+        const GOOGLE_FORM_SUBMIT_URL = "https://docs.google.com/forms/u/0/d/e/1FAIpQLScX.../formResponse";
+        // *** END OF CRITICAL STEP ***
+
         const video = document.getElementById('video');
         const canvas = document.getElementById('scan-canvas');
         const context = canvas.getContext('2d');
         const scannedIdInput = document.getElementById('scanned-id');
         const statusMessage = document.getElementById('status-message');
-        const copyButton = document.getElementById('copy-button');
+        const logStatusButton = document.getElementById('log-status');
         const errorButton = document.getElementById('error-button');
         let stream;
-
-        // --- Helper Function for Copying ---
-        function copyToClipboard() {
-            const id = scannedIdInput.value;
-            if (!id || id === scannedIdInput.placeholder) {
-                updateStatus('Nothing to copy.', 'orange');
-                return;
-            }
-            
-            // Use execCommand('copy') as navigator.clipboard may not work in iframes/certain environments
-            try {
-                scannedIdInput.select();
-                scannedIdInput.setSelectionRange(0, 99999); // For mobile devices
-                document.execCommand('copy');
-                
-                updateStatus(`✅ ID Copied: ${id}`, 'green');
-                // Briefly switch the button to confirm copy
-                copyButton.textContent = 'ID Copied!';
-                copyButton.classList.add('bg-green-600');
-                setTimeout(() => {
-                    copyButton.textContent = '📋 Copy ID to Clipboard';
-                    copyButton.classList.remove('bg-green-600');
-                }, 1500);
-
-            } catch (err) {
-                updateStatus('❌ Failed to copy (Manual copy required).', 'red');
-            }
-        }
-
+        let lastScannedId = null; // Store the ID temporarily
+        let isLogging = false; // Prevent multiple simultaneous logs
+        
         // --- Status Update Function ---
         function updateStatus(message, color) {
             statusMessage.textContent = message;
@@ -151,6 +129,67 @@
                 statusMessage.classList.add('text-red-600', 'bg-red-50');
             } else if (color === 'orange') {
                  statusMessage.classList.add('text-orange-600', 'bg-orange-50');
+            }
+        }
+        
+        // --- Data Logging Function (Submits to Google Form) ---
+        async function logAttendance(studentId) {
+            if (isLogging) return;
+            isLogging = true;
+            
+            // Show logging status
+            logStatusButton.textContent = "⌛ Logging Attendance...";
+            logStatusButton.disabled = true;
+            logStatusButton.classList.remove('bg-green-500', 'bg-red-500', 'bg-indigo-500');
+            logStatusButton.classList.add('bg-orange-500');
+            
+            // The Google Form field entry name is typically entry.<number>
+            // You must inspect the form HTML source to find the exact name for the 'ID' field.
+            // For now, we assume a generic 'entry.000000000' placeholder. The user must fix this.
+            
+            const formFieldName = "entry.123456789"; // <<<--- !!! REPLACE THIS FIELD NAME !!! ---
+            // If the field name for your "ID" input on the form is 'entry.123456789', use that.
+            
+            // Build the URL-encoded data payload
+            const formData = new URLSearchParams();
+            formData.append(formFieldName, studentId);
+            formData.append("submit", "Submit"); // Required for some Google Forms setups
+            
+            try {
+                // Post data to the Google Form endpoint. We expect a redirect or success, but don't need a response body.
+                const response = await fetch(GOOGLE_FORM_SUBMIT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Important for Google Forms submissions
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData.toString()
+                });
+                
+                // Success feedback
+                updateStatus(`✅ ID ${studentId} Logged Successfully! Ready for next scan.`, 'green');
+                logStatusButton.textContent = `✅ Logged ${studentId}`;
+                logStatusButton.classList.remove('bg-orange-500');
+                logStatusButton.classList.add('bg-green-500');
+
+                // Clear the ID after a delay to allow the staff to scan the next QR code
+                setTimeout(() => {
+                    lastScannedId = null;
+                    scannedIdInput.value = "";
+                    logStatusButton.textContent = "Scan Successful, Ready for Next";
+                    logStatusButton.classList.remove('bg-green-500');
+                    logStatusButton.classList.add('bg-indigo-500');
+                }, 2500);
+                
+            } catch (error) {
+                console.error("Error logging to Google Form:", error);
+                updateStatus('❌ Submission Error. Check Console.', 'red');
+                logStatusButton.textContent = "❌ Failed to Log (Check URL/Field Name)";
+                logStatusButton.classList.remove('bg-orange-500');
+                logStatusButton.classList.add('bg-red-500');
+            } finally {
+                isLogging = false;
+                // Button remains disabled until the next distinct ID is scanned or a timeout occurs
             }
         }
 
@@ -171,13 +210,29 @@
                 });
 
                 if (code) {
-                    // QR Code Found
-                    scannedIdInput.value = code.data.trim();
-                    copyButton.disabled = false;
-                    updateStatus('🎉 Code Found! Tap "Copy ID" and paste into the Streamlit app.', 'green');
-                } else {
+                    const currentId = code.data.trim();
+                    scannedIdInput.value = currentId;
+                    
+                    if (currentId && currentId !== lastScannedId && !isLogging) {
+                        // New, unique ID scanned - trigger logging
+                        lastScannedId = currentId; // Update last scanned ID
+                        logAttendance(currentId);
+                        
+                    } else if (currentId && isLogging) {
+                        // Still logging the previous code
+                        updateStatus('Hold steady... logging previous scan.', 'orange');
+                    }
+                     else if (currentId === lastScannedId) {
+                        // Same ID scanned again (already logged or waiting for log)
+                        updateStatus('Code detected. Waiting for a new student.', 'blue');
+                    }
+
+                } else if (!isLogging) {
                     // No QR Code Found
                     updateStatus('🔍 Scanning... Align QR code within the blue guide.', 'blue');
+                    logStatusButton.textContent = "Awaiting Scan";
+                    logStatusButton.classList.remove('bg-green-500', 'bg-red-500', 'bg-orange-500');
+                    logStatusButton.classList.add('bg-indigo-500');
                 }
             }
             // Request the next frame recursively
