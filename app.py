@@ -10,7 +10,7 @@ from datetime import datetime
 # --- Configuration ---
 # The names of the tabs in your Google Sheet (Spreadsheet ID is in secrets.toml)
 ROSTER_SHEET_NAME = "Roster"
-ATTENDANCE_LOG_SHEET_NAME = "Form Responses 1" 
+ATTENDANCE_LOG_SHEET_NAME = "FormResponses" 
 # The column names used in the sheets
 ROSTER_ID_COL = "Students"
 LOG_ID_COL = "ID"
@@ -37,7 +37,7 @@ def load_and_process_data():
         conn = st.connection("gcp_sheets", type=GSheetsConnection)
         
         # Load Roster (main student list)
-        df_roster = conn.read(worksheet=ROSTER_SHEET_NAME, usecols=[ROSTER_ID_COL, 'Student Name'], ttl=5).dropna(subset=[ROSTER_ID_COL])
+        df_roster = conn.read(worksheet=ROSTER_SHEET_NAME, usecols=[ROSTER_ID_COL, 'Students'], ttl=5).dropna(subset=[ROSTER_ID_COL])
         df_roster[ROSTER_ID_COL] = df_roster[ROSTER_ID_COL].astype(str)
         df_roster = df_roster.set_index(ROSTER_ID_COL)
         
