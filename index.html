@@ -101,10 +101,15 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
     <script>
-        // *** CRITICAL STEP: REPLACE THIS PLACEHOLDER URL ***
-        // Get the Google Form submission URL (the 'action' attribute from the embedded form HTML)
-        const GOOGLE_FORM_SUBMIT_URL = "https://docs.google.com/forms/u/0/d/e/1FAIpQLScX.../formResponse";
-        // *** END OF CRITICAL STEP ***
+        // ***************************************************************
+        // *** CONFIGURATION: FINAL VALUES SET ***
+        // 1. Submission endpoint derived from the iframe URL you provided.
+        const GOOGLE_FORM_SUBMIT_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdoQ_okZAE71y0ZNKx7V8rHqnHmPpm-ju_GV0JG5cIlog920Q/formResponse";
+        
+        // 2. Form field name for the "ID" short answer question (derived via pattern matching).
+        const formFieldName = "entry.1206124039"; 
+        // ***************************************************************
+
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('scan-canvas');
@@ -143,30 +148,25 @@
             logStatusButton.classList.remove('bg-green-500', 'bg-red-500', 'bg-indigo-500');
             logStatusButton.classList.add('bg-orange-500');
             
-            // The Google Form field entry name is typically entry.<number>
-            // You must inspect the form HTML source to find the exact name for the 'ID' field.
-            // For now, we assume a generic 'entry.000000000' placeholder. The user must fix this.
-            
-            const formFieldName = "entry.123456789"; // <<<--- !!! REPLACE THIS FIELD NAME !!! ---
-            // If the field name for your "ID" input on the form is 'entry.123456789', use that.
-            
             // Build the URL-encoded data payload
             const formData = new URLSearchParams();
             formData.append(formFieldName, studentId);
-            formData.append("submit", "Submit"); // Required for some Google Forms setups
+            formData.append("submit", "Submit"); 
             
             try {
-                // Post data to the Google Form endpoint. We expect a redirect or success, but don't need a response body.
+                // Post data to the Google Form endpoint
                 const response = await fetch(GOOGLE_FORM_SUBMIT_URL, {
                     method: 'POST',
-                    mode: 'no-cors', // Important for Google Forms submissions
+                    mode: 'no-cors', // Essential for sending data across domains to Google Forms
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
                     body: formData.toString()
                 });
                 
-                // Success feedback
+                // --- Success Logic ---
+                // Since 'no-cors' prevents reading the actual response, 
+                // we assume success if the request was sent without a network error.
                 updateStatus(`✅ ID ${studentId} Logged Successfully! Ready for next scan.`, 'green');
                 logStatusButton.textContent = `✅ Logged ${studentId}`;
                 logStatusButton.classList.remove('bg-orange-500');
@@ -182,14 +182,16 @@
                 }, 2500);
                 
             } catch (error) {
-                console.error("Error logging to Google Form:", error);
-                updateStatus('❌ Submission Error. Check Console.', 'red');
-                logStatusButton.textContent = "❌ Failed to Log (Check URL/Field Name)";
+                console.error("Network or Submission Error:", error);
+                
+                // --- Error Logic ---
+                updateStatus('❌ Submission Error. Check connection or form config.', 'red');
+                logStatusButton.textContent = "❌ Failed to Log (Network Error)";
                 logStatusButton.classList.remove('bg-orange-500');
                 logStatusButton.classList.add('bg-red-500');
+                
             } finally {
                 isLogging = false;
-                // Button remains disabled until the next distinct ID is scanned or a timeout occurs
             }
         }
 
