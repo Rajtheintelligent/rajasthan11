@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
+import gspread
+import time 
+from pyzbar.pyzbar import decode
+from PIL import Image
+import numpy as np
 from datetime import datetime
-# FIX 1: Import the Google Sheets Connection class
-from streamlit_gsheets_connection import GSheetsConnection 
 
 # --- Configuration ---
 # The names of the tabs in your Google Sheet (Spreadsheet ID is in secrets.toml)
