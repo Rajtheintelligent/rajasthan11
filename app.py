@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+# FIX 1: Import the Google Sheets Connection class
+from streamlit_gsheets_connection import GSheetsConnection 
 
 # --- Configuration ---
 # The names of the tabs in your Google Sheet (Spreadsheet ID is in secrets.toml)
@@ -28,7 +30,8 @@ def load_and_process_data():
     try:
         # 1. Load the Master Roster
         # The Streamlit st.connection('gcp_sheets') uses the credentials from secrets.toml
-        conn = st.connection("gcp_sheets", type="sheets")
+        # FIX 2: Change type to the imported class
+        conn = st.connection("gcp_sheets", type=GSheetsConnection)
         
         # Load Roster (main student list)
         df_roster = conn.read(worksheet=ROSTER_SHEET_NAME, usecols=[ROSTER_ID_COL, 'Student Name'], ttl=5).dropna(subset=[ROSTER_ID_COL])
