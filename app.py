@@ -34,7 +34,7 @@ def load_and_process_data():
         # 1. Load the Master Roster
         # The Streamlit st.connection('gcp_sheets') uses the credentials from secrets.toml
         # FIX 2: Change type to the imported class
-        conn = st.connection("gcp_sheets", type=GSheetsConnection)
+        #conn = st.connection("gcp_sheets", type=GSheetsConnection)
         
         # Load Roster (main student list)
         df_roster = conn.read(worksheet=ROSTER_SHEET_NAME, usecols=[ROSTER_ID_COL, 'Students'], ttl=5).dropna(subset=[ROSTER_ID_COL])
