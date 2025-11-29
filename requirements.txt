@@ -5,3 +5,4 @@ streamlit-webrtc
 Pillow
 pyzbar
 opencv-python
+pip install streamlit-gsheets-connection
