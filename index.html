@@ -1,89 +1,283 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-from streamlit_gsheets import GSheetsConnection
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile QR Scanner</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font family -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* Style for the video feed container */
+        #scanner-container {
+            position: relative;
+            width: 100%;
+            max-width: 450px; /* Max width suitable for mobile portrait mode */
+            margin: 0 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #video, #scan-canvas {
+            width: 100%;
+            display: block;
+        }
+        /* The canvas element is used to process video frames, keep it hidden */
+        #scan-canvas {
+            display: none; 
+        }
+        /* Custom border/guide for scanning area */
+        #video-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 70%;
+            height: 70%;
+            transform: translate(-50%, -50%);
+            border: 4px dashed #3B82F6; /* Blue dash for visibility */
+            border-radius: 8px;
+            z-index: 10;
+            pointer-events: none; /* Allows clicks to pass through to the video */
+        }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center justify-start min-h-screen">
 
-# ---------------------------
-# CONFIG
-# ---------------------------
-ROSTER_SHEET = "Roster"
-LOG_SHEET = "FormResponses"
+    <div class="w-full max-w-lg mb-6">
+        <h1 class="text-2xl font-bold text-gray-800 text-center mb-1">Trip ID Scanner</h1>
+        <p class="text-sm text-gray-500 text-center">Scan QR code to automatically check in student.</p>
+    </div>
 
-STUDENT_ID_COL = "ID"
-NAME_COL = "Name"
+    <!-- Scanner Container -->
+    <div id="scanner-container">
+        <!-- Video element to display camera feed -->
+        <video id="video" playsinline muted autoplay></video>
+        <!-- Scanning Guide Overlay -->
+        <div id="video-overlay"></div>
+        <!-- Canvas for image processing (hidden) -->
+        <canvas id="scan-canvas"></canvas>
+    </div>
 
-LOG_ID_COL = "ID"
-TIMESTAMP_COL = "Timestamp"
+    <!-- Status & Output Area -->
+    <div class="w-full max-w-lg mt-6 p-4 bg-white rounded-xl shadow-lg">
+        
+        <div id="status-message" class="text-center text-sm font-medium text-blue-600 mb-4 p-2 bg-blue-50 rounded-lg">
+            Awaiting camera access...
+        </div>
+        
+        <div class="text-center mb-4">
+            <label class="block text-gray-700 font-semibold mb-1">Last Scanned ID:</label>
+            <input 
+                id="scanned-id" 
+                readonly 
+                placeholder="Scan a QR code..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg font-mono text-center bg-gray-50 focus:outline-none"
+            />
+        </div>
 
-st.set_page_config(page_title="Attendance Dashboard", page_icon="📋", layout="wide")
+        <button 
+            id="log-status" 
+            disabled
+            class="w-full bg-indigo-500 text-white font-bold py-3 px-4 rounded-lg transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+        >
+            Awaiting Scan
+        </button>
+        
+        <button 
+            id="error-button" 
+            onclick="location.reload()"
+            class="hidden w-full mt-2 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition duration-150 ease-in-out shadow-md hover:shadow-lg"
+        >
+            ❌ Error: Try Restarting Scanner
+        </button>
+    </div>
 
-st.title("📋 Live Attendance Dashboard")
 
-# ---------------------------
-# GOOGLE SHEET CONNECTION
-# ---------------------------
-conn = st.connection("gcp_sheets", type=GSheetsConnection)
+    <!-- Load the jsQR library -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
-# Load sheets
-roster_df = conn.read(worksheet=ROSTER_SHEET)
-log_df = conn.read(worksheet=LOG_SHEET)
+    <script>
+        // ***************************************************************
+        // *** CONFIGURATION: FINAL VALUES SET ***
+        // 1. Submission endpoint derived from the iframe URL you provided.
+        const GOOGLE_FORM_SUBMIT_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdoQ_okZAE71y0ZNKx7V8rHqnHmPpm-ju_GV0JG5cIlog920Q/formResponse";
+        
+        // 2. Form field name for the "ID" short answer question (CONFIRMED FIXED).
+        const formFieldName = "entry.1321031091"; 
+        // ***************************************************************
 
-# Clean data
-roster_df.dropna(subset=[STUDENT_ID_COL], inplace=True)
-roster_df[STUDENT_ID_COL] = roster_df[STUDENT_ID_COL].astype(str).str.strip()
 
-log_df[LOG_ID_COL] = log_df[LOG_ID_COL].astype(str).str.strip()
-log_df[TIMESTAMP_COL] = pd.to_datetime(log_df[TIMESTAMP_COL], errors="coerce")
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('scan-canvas');
+        const context = canvas.getContext('2d');
+        const scannedIdInput = document.getElementById('scanned-id');
+        const statusMessage = document.getElementById('status-message');
+        const logStatusButton = document.getElementById('log-status');
+        const errorButton = document.getElementById('error-button');
+        let stream;
+        let lastScannedId = null; // Store the ID temporarily
+        let isLogging = false; // Prevent multiple simultaneous logs
+        
+        // --- Status Update Function ---
+        function updateStatus(message, color) {
+            statusMessage.textContent = message;
+            statusMessage.className = `text-center text-sm font-medium mb-4 p-2 rounded-lg`;
+            if (color === 'blue') {
+                statusMessage.classList.add('text-blue-600', 'bg-blue-50');
+            } else if (color === 'green') {
+                // Modified success style
+                statusMessage.classList.add('text-green-800', 'bg-green-200', 'font-extrabold', 'text-base');
+            } else if (color === 'red') {
+                statusMessage.classList.add('text-red-600', 'bg-red-50');
+            } else if (color === 'orange') {
+                 statusMessage.classList.add('text-orange-600', 'bg-orange-50');
+            }
+        }
+        
+        // --- Data Logging Function (Submits to Google Form) ---
+        async function logAttendance(studentId) {
+            if (isLogging) return;
+            isLogging = true;
+            
+            // Show logging status
+            logStatusButton.textContent = "⌛ Logging Attendance...";
+            logStatusButton.disabled = true;
+            logStatusButton.classList.remove('bg-green-500', 'bg-red-500', 'bg-indigo-500');
+            logStatusButton.classList.add('bg-orange-500');
+            
+            // Build the URL-encoded data payload
+            const formData = new URLSearchParams();
+            formData.append(formFieldName, studentId);
+            formData.append("submit", "Submit"); 
+            
+            try {
+                // Post data to the Google Form endpoint
+                const response = await fetch(GOOGLE_FORM_SUBMIT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Essential for sending data across domains to Google Forms
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData.toString()
+                });
+                
+                // --- Success Logic (Updated Text) ---
+                // Since 'no-cors' prevents reading the actual response, 
+                // we assume success if the request was sent without a network error.
+                updateStatus(`✅ SUCCESS: ID ${studentId} CHECKED IN.`, 'green');
+                logStatusButton.textContent = `✅ Logged ${studentId}`;
+                logStatusButton.classList.remove('bg-orange-500');
+                logStatusButton.classList.add('bg-green-500');
 
-# ---------------------------
-# FILTER TODAY'S ATTENDANCE
-# ---------------------------
-today = datetime.now().date()
+                // Clear the ID after a delay to allow the staff to scan the next QR code
+                setTimeout(() => {
+                    lastScannedId = null;
+                    scannedIdInput.value = "";
+                    logStatusButton.textContent = "Scan Successful, Ready for Next";
+                    logStatusButton.classList.remove('bg-green-500');
+                    logStatusButton.classList.add('bg-indigo-500');
+                }, 2500);
+                
+            } catch (error) {
+                console.error("Network or Submission Error:", error);
+                
+                // --- Error Logic ---
+                updateStatus('❌ Submission Error. Check connection or form config.', 'red');
+                logStatusButton.textContent = "❌ Failed to Log (Network Error)";
+                logStatusButton.classList.remove('bg-orange-500');
+                logStatusButton.classList.add('bg-red-500');
+                
+            } finally {
+                isLogging = false;
+            }
+        }
 
-log_today = log_df[log_df[TIMESTAMP_COL].dt.date == today]
-present_ids = set(log_today[LOG_ID_COL].unique())
+        // --- Main Scanning Loop ---
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // Resize canvas to match video dimensions
+                canvas.height = video.videoHeight;
+                canvas.width = video.videoWidth;
 
-# ---------------------------
-# PREPARE FINAL ATTENDANCE TABLE
-# ---------------------------
-attendance_df = roster_df.copy()
-attendance_df["Status"] = attendance_df[STUDENT_ID_COL].apply(
-    lambda sid: "PRESENT" if sid in present_ids else "ABSENT"
-)
+                // Draw the video frame onto the canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                
+                // Use jsQR to scan for QR codes
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
 
-present_count = (attendance_df["Status"] == "PRESENT").sum()
-total_students = len(attendance_df)
+                if (code) {
+                    const currentId = code.data.trim();
+                    scannedIdInput.value = currentId;
+                    
+                    if (currentId && currentId !== lastScannedId && !isLogging) {
+                        // New, unique ID scanned - trigger logging
+                        lastScannedId = currentId; // Update last scanned ID
+                        logAttendance(currentId);
+                        
+                    } else if (currentId && isLogging) {
+                        // Still logging the previous code
+                        updateStatus('Hold steady... logging previous scan.', 'orange');
+                    }
+                     else if (currentId === lastScannedId) {
+                        // Same ID scanned again (already logged or waiting for log)
+                        updateStatus('Code detected. Waiting for a new student.', 'blue');
+                    }
 
-# ---------------------------
-# ACTION BUTTONS
-# ---------------------------
-col1, col2, col3 = st.columns([1, 1, 2])
+                } else if (!isLogging) {
+                    // No QR Code Found
+                    updateStatus('🔍 Scanning... Align QR code within the blue guide.', 'blue');
+                    logStatusButton.textContent = "Awaiting Scan";
+                    logStatusButton.classList.remove('bg-green-500', 'bg-red-500', 'bg-orange-500');
+                    logStatusButton.classList.add('bg-indigo-500');
+                }
+            }
+            // Request the next frame recursively
+            requestAnimationFrame(tick);
+        }
 
-with col1:
-    if st.button("🔁 Reset TODAY's Attendance"):
-        df_without_today = log_df[log_df[TIMESTAMP_COL].dt.date != today]
-        conn.update(worksheet=LOG_SHEET, data=df_without_today)
-        st.cache_data.clear()
-        st.success("Today's attendance has been reset!")
-        st.stop()
+        // --- Initialization and Camera Setup ---
+        async function startCamera() {
+            updateStatus('Requesting camera permissions...', 'blue');
+            try {
+                // Request back camera on mobile devices
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: "environment" 
+                    } 
+                });
+                
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    updateStatus('Camera active. Scanning for QR codes...', 'blue');
+                    requestAnimationFrame(tick);
+                };
+                
+            } catch (err) {
+                // Handle permission denied or no camera found errors
+                console.error("Camera access error:", err);
+                updateStatus('❌ Error: Camera access denied or not available.', 'red');
+                errorButton.classList.remove('hidden');
+            }
+        }
 
-with col2:
-    if st.button("📷 Open QR Scanning Page"):
-        st.markdown(
-            """<script>
-                window.open("https://rajasthan11.vercel.app", "_blank").focus();
-               </script>""",
-            unsafe_allow_html=True
-        )
+        // --- Lifecycle Hooks ---
+        window.addEventListener('load', startCamera);
+        
+        // Stop camera stream when the page is closed/unloaded
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
 
-# ---------------------------
-# DISPLAY SUMMARY
-# ---------------------------
-st.subheader(f"Attendance Today – {today.strftime('%d %B %Y')}")
-st.markdown(f"### 🟢 Present: **{present_count}** / {total_students}")
-
-# ---------------------------
-# DISPLAY TABLE
-# ---------------------------
-st.dataframe(attendance_df, use_container_width=True)
-
+    </script>
+</body>
+</html>
