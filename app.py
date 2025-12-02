@@ -3,6 +3,19 @@ import pandas as pd
 from datetime import datetime
 # Import the specialized Streamlit GSheets Connection class
 from streamlit_gsheets_connection import GSheetsConnection 
+import json
+import os
+from google.oauth2.service_account import Credentials
+
+def get_gsheet_client():
+    creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    creds_dict = json.loads(creds_json)
+
+    creds = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    return creds
 
 # --- Configuration ---
 # The names of the tabs in your Google Sheet (Spreadsheet ID is configured in secrets.toml)
