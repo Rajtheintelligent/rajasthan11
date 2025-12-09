@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>exams.com</title>
+
+  <style>
+    /* Google-style color theme */
+    :root {
+      --google-blue: #4285F4;
+      --google-red: #EA4335;
+      --google-yellow: #FBBC05;
+      --google-green: #34A853;
+    }
+
+    body {
+      background: #fafafa;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: "Roboto", sans-serif;
+      overflow: hidden;
+    }
+
+    .container {
+      text-align: center;
+      animation: fadeIn 1.6s ease;
+    }
+
+    .logo span {
+      font-size: 64px;
+      font-weight: 500;
+      opacity: 0;
+      animation: slideUp 0.8s forwards;
+    }
+
+    .logo .e { color: var(--google-blue); animation-delay: 0.2s; }
+    .logo .x { color: var(--google-red); animation-delay: 0.4s; }
+    .logo .a { color: var(--google-yellow); animation-delay: 0.6s; }
+    .logo .m { color: var(--google-blue); animation-delay: 0.8s; }
+    .logo .s { color: var(--google-green); animation-delay: 1.0s; }
+    .logo .dot {
+      color: #555;
+      font-weight: 300;
+      animation-delay: 1.2s;
+      font-size: 48px;
+    }
+
+    .tagline {
+      margin-top: 20px;
+      font-size: 18px;
+      color: #555;
+      opacity: 0;
+      animation: fadeInUp 1.2s ease forwards;
+      animation-delay: 1.5s;
+    }
+
+    .enter-btn {
+      margin-top: 40px;
+      padding: 12px 30px;
+      font-size: 18px;
+      border-radius: 50px;
+      border: none;
+      cursor: pointer;
+      background: var(--google-blue);
+      color: white;
+      opacity: 0;
+      transform: translateY(20px);
+      animation: fadeInUp 1s ease forwards;
+      animation-delay: 2s;
+    }
+
+    .enter-btn:hover {
+      background: #3367d6;
+    }
+
+    /* Animations */
+    @keyframes slideUp {
+      0% { opacity: 0; transform: translateY(25px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+
+    @keyframes fadeInUp {
+      0% { opacity: 0; transform: translateY(20px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="logo">
+      <span class="e">e</span>
+      <span class="x">x</span>
+      <span class="a">a</span>
+      <span class="m">m</span>
+      <span class="s">s</span>
+      <span class="dot">.com</span>
+    </div>
+
+    <div class="tagline">Assess • Evaluate • Excel</div>
+
+    <button class="enter-btn" onclick="enterApp()">Enter</button>
+  </div>
+
+  <script>
+    function enterApp() {
+      // redirect to your app home page
+      window.location.href = "/dashboard";
+    }
+  </script>
+</body>
+</html>
